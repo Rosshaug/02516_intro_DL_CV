@@ -5,6 +5,27 @@ from PIL import Image
 import torch
 from torchvision import transforms as T
 
+# ImageNet statistics, only used to normalize the input (no pretrained weights).
+MEAN = [0.485, 0.456, 0.406]
+STD = [0.229, 0.224, 0.225]
+
+
+def get_transforms(train, img_size=112):
+    """Transforms operating on tensors of shape [..., C, H, W] (a frame or a stacked video)."""
+    if train:
+        return T.Compose([
+            T.Resize(int(img_size * 8 / 7)),
+            T.RandomCrop(img_size),
+            T.RandomHorizontalFlip(),
+            T.Normalize(MEAN, STD),
+        ])
+    return T.Compose([
+        T.Resize(int(img_size * 8 / 7)),
+        T.CenterCrop(img_size),
+        T.Normalize(MEAN, STD),
+    ])
+
+
 class FrameImageDataset(torch.utils.data.Dataset):
     def __init__(self, 
     root_dir='/work3/ppar/data/ucf101',
@@ -24,16 +45,13 @@ class FrameImageDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         frame_path = self.frame_paths[idx]
-        video_name = frame_path.split('/')[-2]
+        video_name = os.path.basename(os.path.dirname(frame_path))
         video_meta = self._get_meta('video_name', video_name)
         label = video_meta['label'].item()
         
-        frame = Image.open(frame_path).convert("RGB")
-
+        frame = T.ToTensor()(Image.open(frame_path).convert("RGB"))
         if self.transform:
             frame = self.transform(frame)
-        else:
-            frame = T.ToTensor()(frame)
 
         return frame, label
 
@@ -48,6 +66,7 @@ class FrameVideoDataset(torch.utils.data.Dataset):
 
         self.video_paths = sorted(glob(f'{root_dir}/videos/{split}/*/*.avi'))
         self.df = pd.read_csv(f'{root_dir}/metadata/{split}.csv')
+        self.root_dir = root_dir
         self.split = split
         self.transform = transform
         self.stack_frames = stack_frames
@@ -62,21 +81,24 @@ class FrameVideoDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         video_path = self.video_paths[idx]
-        video_name = video_path.split('/')[-1].split('.avi')[0]
+        class_name = os.path.basename(os.path.dirname(video_path))
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
         video_meta = self._get_meta('video_name', video_name)
         label = video_meta['label'].item()
 
-        video_frames_dir = self.video_paths[idx].split('.avi')[0].replace('videos', 'frames')
+        video_frames_dir = os.path.join(self.root_dir, 'frames', self.split, class_name, video_name)
         video_frames = self.load_frames(video_frames_dir)
 
+        # Stack to [T, C, H, W] before transforming, so random crops/flips are
+        # identical for every frame of the video (no fake motion between frames).
+        frames = torch.stack([T.ToTensor()(frame) for frame in video_frames])
         if self.transform:
-            frames = [self.transform(frame) for frame in video_frames]
-        else:
-            frames = [T.ToTensor()(frame) for frame in video_frames]
-        
-        if self.stack_frames:
-            frames = torch.stack(frames).permute(1, 0, 2, 3)
+            frames = self.transform(frames)
 
+        if self.stack_frames:
+            frames = frames.permute(1, 0, 2, 3)  # [C, T, H, W]
+        else:
+            frames = list(frames)
 
         return frames, label
     
@@ -95,7 +117,7 @@ if __name__ == '__main__':
 
     root_dir = '/work3/ppar/data/ucf101'
 
-    transform = T.Compose([T.Resize((64, 64)),T.ToTensor()])
+    transform = get_transforms(train=False, img_size=64)
     frameimage_dataset = FrameImageDataset(root_dir=root_dir, split='val', transform=transform)
     framevideostack_dataset = FrameVideoDataset(root_dir=root_dir, split='val', transform=transform, stack_frames = True)
     framevideolist_dataset = FrameVideoDataset(root_dir=root_dir, split='val', transform=transform, stack_frames = False)
