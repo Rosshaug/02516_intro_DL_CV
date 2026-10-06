@@ -23,7 +23,7 @@ def parse_args():
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--root_dir', default='/dtu/datasets1/02516/ufc10')
     p.add_argument('--out_dir', default='results')
-    p.add_argument('--epochs', type=int, default=60)
+    p.add_argument('--epochs', type=int, default=100)
     p.add_argument('--batch_size', type=int, default=16)
     p.add_argument('--lr', type=float, default=1e-3)
     p.add_argument('--weight_decay', type=float, default=1e-2)
