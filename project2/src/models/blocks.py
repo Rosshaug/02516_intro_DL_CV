@@ -45,11 +45,11 @@ def backbone_3d(in_channels=3):
 
 
 def head(in_features, num_classes, hidden=None):
-    """Linear classifier, or a one-hidden-layer MLP if `hidden` is given."""
+    """Linear classifier, or a one-hidden-layer MLP if `hidden` is given.
+    Both variants have exactly one dropout, right before the final layer."""
     if hidden is None:
         return nn.Sequential(nn.Dropout(0.5), nn.Linear(in_features, num_classes))
     return nn.Sequential(
-        nn.Dropout(0.5),
         nn.Linear(in_features, hidden),
         nn.ReLU(inplace=True),
         nn.Dropout(0.5),

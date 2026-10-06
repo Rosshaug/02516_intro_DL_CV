@@ -10,11 +10,5 @@
 #BSUB -e logs/%J.err
 
 source ../.venv/bin/activate
+python src/train.py --model per_frame --epochs 2
 
-for model in per_frame late_fusion early_fusion cnn3d; do
-    for seed in 0 1 2; do
-        python src/train.py --model $model --seed $seed
-    done
-done
-
-python src/summarize.py

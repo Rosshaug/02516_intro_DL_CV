@@ -58,7 +58,7 @@ class FrameImageDataset(torch.utils.data.Dataset):
 
 class FrameVideoDataset(torch.utils.data.Dataset):
     def __init__(self, 
-    root_dir = '/work3/ppar/data/ucf101', 
+    root_dir = '/dtu/datasets1/02516/ufc10', 
     split = 'train', 
     transform = None,
     stack_frames = True

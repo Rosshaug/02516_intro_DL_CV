@@ -1,1 +1,5 @@
 docs/
+logs/
+results/
+
+__pycache__/
