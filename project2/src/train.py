@@ -21,7 +21,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--model', required=True, choices=list(MODELS))
     p.add_argument('--seed', type=int, default=0)
-    p.add_argument('--root_dir', default='/dtu/datasets1/02516/ufc10')
+    p.add_argument('--root_dir', default='/dtu/datasets1/02516/ucf101_noleakage') # /dtu/datasets1/02516/ucf101
     p.add_argument('--out_dir', default='results')
     p.add_argument('--epochs', type=int, default=100)
     p.add_argument('--batch_size', type=int, default=16)
