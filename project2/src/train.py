@@ -13,7 +13,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from datasets import FrameVideoDataset, get_transforms
+from datasets import FrameVideoDataset, DualStreamDataset, get_transforms
 from models import MODELS, build_model
 
 
@@ -40,8 +40,13 @@ def set_seed(seed):
 
 
 def loss_and_probs(logits, labels):
-    """Handles both video logits [B, C] and per-frame logits [B, T, C]."""
-    if logits.dim() == 3:
+    """Handles video logits [B, C], per-frame logits [B, T, C], and DualStream tuple outputs."""
+    if isinstance(logits, tuple):
+        # DualStream returns (fused_logits, spatial_logits, temporal_logits)
+        fused_logits, spatial_logits, temporal_logits = logits
+        loss = F.cross_entropy(spatial_logits, labels) + F.cross_entropy(temporal_logits, labels)
+        probs = 0.5 * spatial_logits.softmax(-1) + 0.5 * temporal_logits.softmax(-1)
+    elif logits.dim() == 3:
         B, T, C = logits.shape
         loss = F.cross_entropy(logits.reshape(B * T, C), labels.repeat_interleave(T))
         probs = logits.softmax(-1).mean(1)        # average frame predictions
@@ -57,9 +62,17 @@ def run_epoch(model, loader, device, optimizer=None):
     model.train(train)
     total_loss, preds, labels_all = 0.0, [], []
     with torch.set_grad_enabled(train):
-        for videos, labels in loader:
-            videos, labels = videos.to(device), labels.to(device)
-            loss, probs = loss_and_probs(model(videos), labels)
+        for batch in loader:
+            if len(batch) == 3:
+                rgb, flow, labels = batch
+                rgb, flow, labels = rgb.to(device), flow.to(device), labels.to(device)
+                logits = model(rgb, flow)
+            else:
+                videos, labels = batch
+                videos, labels = videos.to(device), labels.to(device)
+                logits = model(videos)
+
+            loss, probs = loss_and_probs(logits, labels)
             if train:
                 optimizer.zero_grad()
                 loss.backward()
@@ -80,7 +93,10 @@ def main():
     run_name = f'{args.model}_seed{args.seed}'
 
     def loader(split, train):
-        ds = FrameVideoDataset(args.root_dir, split, get_transforms(train, args.img_size))
+        if args.model == 'dual_stream':
+            ds = DualStreamDataset(args.root_dir, split, img_size=args.img_size)
+        else:
+            ds = FrameVideoDataset(args.root_dir, split, get_transforms(train, args.img_size))
         return DataLoader(ds, args.batch_size, shuffle=train, num_workers=args.num_workers)
 
     train_loader, val_loader, test_loader = loader('train', True), loader('val', False), loader('test', False)
