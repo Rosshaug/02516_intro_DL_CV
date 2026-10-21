@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #BSUB -q c02516
 #BSUB -J video
 #BSUB -n 4
@@ -11,10 +11,8 @@
 
 source ../.venv/bin/activate
 
-for model in per_frame late_fusion early_fusion cnn3d; do
-    for seed in 0 1 2; do
-        python src/train.py --model $model --seed $seed
-    done
+for seed in 0 1 2; do
+    python src/train.py --model dual_stream --seed $seed
 done
 
 python src/summarize.py

@@ -142,39 +142,31 @@ class DualStreamDataset(torch.utils.data.Dataset):
         video_meta = self._get_meta('video_name', video_name)
         label = video_meta['label'].item()
 
-        # 1. Load the 10 RGB frames
+        # 1. Load the 10 RGB frames -> [T, C, H, W]
         frames_dir = os.path.join(self.root_dir, 'frames', self.split, class_name, video_name)
         rgb_frames = []
         for i in range(1, self.n_sampled_frames + 1):
             frame_file = os.path.join(frames_dir, f"frame_{i}.jpg")
             frame = T.ToTensor()(Image.open(frame_file).convert("RGB"))
             rgb_frames.append(frame)
-        
-        # Stack to [T, C, H, W]
-        rgb_frames = torch.stack(rgb_frames) 
+        rgb_frames = torch.stack(rgb_frames)
 
-        # 2. Load the 9 Optical Flow frames
+        # 2. Load the 9 Optical Flow frames and center [0, 1] -> [-1, 1]
         flows_dir = os.path.join(self.root_dir, 'flows_png', self.split, class_name, video_name)
         flow_frames = []
         for i in range(1, self.n_sampled_frames):
             flow_file = os.path.join(flows_dir, f"flow_{i}_{i+1}.png")
-            # Convert to tensor and slice only the first 2 channels (dx, dy)
             flow = T.ToTensor()(Image.open(flow_file).convert("RGB"))[:2, :, :]
+            flow = (flow - 0.5) / 0.5  # Center around 0.0 so range is [-1, 1]
             flow_frames.append(flow)
-        
-        # Stack flows along the channel dimension to get [18, H, W]
-        temporal_input = torch.cat(flow_frames, dim=0)
+        temporal_input = torch.cat(flow_frames, dim=0)  # [18, H, W]
 
         img_size = self.img_size
         resize_size = int(img_size * 8 / 7)
-        scale_factor = resize_size / rgb_frames.shape[-1] # Assuming square resize
 
-        # 1. Resize (Apply to both)
-        rgb_frames = TF.resize(rgb_frames, [resize_size, resize_size])
-        temporal_input = TF.resize(temporal_input, [resize_size, resize_size])
-
-        # Scale flow magnitudes due to resizing
-        temporal_input = temporal_input * scale_factor
+        # 1. Resize shorter side (matching get_transforms)
+        rgb_frames = TF.resize(rgb_frames, resize_size)
+        temporal_input = TF.resize(temporal_input, resize_size)
 
         if self.split == 'train':
             # 2. Synchronized Random Crop
@@ -186,23 +178,17 @@ class DualStreamDataset(torch.utils.data.Dataset):
             if random.random() > 0.5:
                 rgb_frames = TF.hflip(rgb_frames)
                 temporal_input = TF.hflip(temporal_input)
-                
-                # Invert the dx channels in the optical flow (channels 0, 2, 4, 6...)
-                for c in range(0, temporal_input.shape[0], 2):
-                    temporal_input[c, :, :] = temporal_input[c, :, :] * -1
-
+                # Invert dx channels (0, 2, 4, ..., 16) around 0.0
+                temporal_input[0::2, :, :] = -temporal_input[0::2, :, :]
         else:
             # Validation/Test: Synchronized Center Crop
             rgb_frames = TF.center_crop(rgb_frames, img_size)
             temporal_input = TF.center_crop(temporal_input, img_size)
 
-        # 4. Normalize RGB only (using your existing ImageNet stats)
+        # 4. Normalize RGB with ImageNet stats and permute to [C, T, H, W]
         rgb_frames = T.Normalize(MEAN, STD)(rgb_frames)
-
-        # Normalize Flow to a fixed range (e.g., [-1, 1] or mean=0, std=1 across the dataset)
-        # If RAFT outputs are already normalized, you can skip this, but typically you standardize it:
-        # temporal_input = (temporal_input - temporal_input.mean()) / temporal_input.std()
         rgb_frames = rgb_frames.permute(1, 0, 2, 3)
+
         return rgb_frames, temporal_input, label
 
 

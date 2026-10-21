@@ -13,8 +13,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from .datasets import FrameVideoDataset, DualStreamDataset, get_transforms
-from .models import MODELS, build_model
+from datasets import FrameVideoDataset, DualStreamDataset, get_transforms
+from models import MODELS, build_model
 
 
 def parse_args():

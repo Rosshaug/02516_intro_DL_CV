@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #BSUB -q c02516
 #BSUB -J video
 #BSUB -n 4
@@ -10,5 +10,5 @@
 #BSUB -e logs/%J.err
 
 source ../.venv/bin/activate
-python src/train.py --model per_frame --epochs 2
+python src/train.py --model late_fusion --epochs 2
 
