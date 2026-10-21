@@ -13,7 +13,7 @@ source ../.venv/bin/activate
 
 for model in per_frame late_fusion early_fusion cnn3d; do
     for seed in 0 1 2; do
-        python src/train.py --model $model --seed $seed
+        python src/train.py --model $model --seed $seed --root_dir /dtu/datasets1/02516/ucf101
     done
 done
 
