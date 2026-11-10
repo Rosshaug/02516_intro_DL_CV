@@ -1,132 +1,85 @@
 import os
-import numpy as np
-import glob
-import PIL.Image as Image
+from pathlib import Path
+from time import time
+import argparse
+import uuid
 
-# pip install torchsummary
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.datasets as datasets
-from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
-from torchvision import models
-from torchsummary import summary
 import torch.optim as optim
-from time import time
-from pathlib import Path
-import uuid
-import argparse
+from torch.utils.data import DataLoader
 
-
-# Module imports
 from lib.model.EncDecModel import EncDec
-from lib.model.DilatedNetModel import DilatedNet
-from lib.model.UNetModel import UNet, UNet2
 from lib.model.UNetMulti import UNet as UNetMulti
-from lib.losses import BCELoss # , DiceLoss, FocalLoss, BCELoss_TotalVariation
-from lib.dataset.PhCDataset import PhC
+from lib.losses import BCELoss  # , DiceLoss, FocalLoss, BCELoss_TotalVariation
+from lib.dataset.PH2Dataset import PH2
+from lib.dataset.DRIVE_Dataset import DRIVE
 from lib.dataset.CMPDataset import Facade
+from measure import evaluate, print_table
+
+DATASETS = {'ph2': PH2, 'drive': DRIVE, 'facade': Facade}
+
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["single", "multi"], default="single")
+    parser.add_argument('--dataset', choices=DATASETS, default='ph2')
+    parser.add_argument('--epochs', type=int, default=20)
+    parser.add_argument('--batch_size', type=int, default=6)
+    parser.add_argument('--lr', type=float, default=1e-3)
     args = parser.parse_args()
-    multi = args.mode == "multi"
+    multi = args.dataset == 'facade'
 
-    # Device
-    # Check that MPS is available
-    if torch.backends.mps.is_available():
-        device = torch.device("mps")
-    elif torch.cuda.is_available():
-        device = torch.device("cuda")
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    elif torch.backends.mps.is_available():
+        device = torch.device('mps')
     else:
-        print("No device could be found. Ending script.")
-        raise SystemExit
-
+        device = torch.device('cpu')
+    print(f'Device: {device} | dataset: {args.dataset}')
 
     # Dataset
-    size = 128
-    train_transform = transforms.Compose([transforms.Resize((size, size)),
-                                        transforms.ToTensor()])
-    test_transform = transforms.Compose([transforms.Resize((size, size)),
-                                        transforms.ToTensor()])
-
-    batch_size = 6
-    if multi:
-        trainset = Facade('train', size=size)
-    else:
-        trainset = PhC(train=True, transform=train_transform)
-    train_loader = DataLoader(trainset, batch_size=batch_size, shuffle=True,
-                              num_workers=3)
-    testset = Facade('test', size=size) if multi else PhC(train=False, transform=test_transform)
-    test_loader = DataLoader(testset, batch_size=batch_size, shuffle=False,
-                              num_workers=3)
-    # IMPORTANT NOTE: There is no validation set provided here, but don't forget to
-    # have one for the project
-
-    print(f"Loaded {len(trainset)} training images")
-    print(f"Loaded {len(testset)} test images")
+    size = 128  # EncDec is hardcoded to 128x128
+    Dataset = DATASETS[args.dataset]
+    trainset, valset = Dataset('train', size=size), Dataset('val', size=size)
+    train_loader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=3)
+    val_loader = DataLoader(valset, batch_size=args.batch_size, shuffle=False, num_workers=3)
+    print(f'Loaded {len(trainset)} training / {len(valset)} validation images')
 
     # Training setup
-
     model = (UNetMulti() if multi else EncDec()).to(device)
-    #model = UNet().to(device) # TODO
-    #model = UNet2().to(device) # TODO
-    #model = DilatedNet().to(device) # TODO
-    learning_rate = 0.001
-    opt = optim.Adam(model.parameters(), learning_rate)
-
-    #loss_fn = BCELoss()
-    #loss_fn = DiceLoss()
-    #loss_fn = FocalLoss()
-    #loss_fn = BCELoss_TotalVariation()
-
+    opt = optim.Adam(model.parameters(), args.lr)
     loss_fn = nn.CrossEntropyLoss() if multi else BCELoss()
-    epochs = 20
 
     # Training loop
-    X_test, Y_test = next(iter(test_loader))
-
-    #summary(model, tuple(X_test.shape[1:]))
-
-    model.train()  # train mode
-    for epoch in range(epochs):
+    model.train()
+    for epoch in range(args.epochs):
         tic = time()
-        print(f'* Epoch {epoch+1}/{epochs}')
-
         avg_loss = 0
         for X_batch, y_true in train_loader:
-            X_batch = X_batch.to(device)
-            y_true = y_true.to(device) if multi else y_true.to(device).float()
-
-            # set parameter gradients to zero
+            X_batch, y_true = X_batch.to(device), y_true.to(device)
             opt.zero_grad()
-
-            # forward
-            y_pred = model(X_batch)
-            # IMPORTANT NOTE: Check whether y_pred is normalized or unnormalized
-            # and whether it makes sense to apply sigmoid or softmax.
-            loss = loss_fn(y_pred, y_true)  # forward-pass
-            loss.backward()  # backward-pass
-            opt.step()  # update weights
-
-            # calculate metrics to show the user
+            y_pred = model(X_batch)  # logits; sigmoid/softmax is inside the loss
+            loss = loss_fn(y_pred, y_true)
+            loss.backward()
+            opt.step()
             avg_loss += loss.item() / len(train_loader)
 
-        # IMPORTANT NOTE: It is a good practice to check performance on a
-        # validation set after each epoch.
-        #model.eval()  # testing mode
-        #Y_hat = F.sigmoid(model(X_test.to(device))).detach().cpu()
-        print(f' - loss: {avg_loss}')
+        val_metrics, val_loss = evaluate(model, val_loader, device, loss_fn)
+        print(f'* Epoch {epoch+1}/{args.epochs} | train loss {avg_loss:.4f} | '
+              f'val loss {val_loss:.4f} | val dice {val_metrics["dice"]:.4f} | {time()-tic:.1f}s')
 
-    # Save the model
-    out_path = Path("Courses/02516/ex3/weights")
+    # Final validation metrics
+    val_metrics, _ = evaluate(model, val_loader, device)
+    print_table(f'Validation metrics: {type(model).__name__} on {args.dataset}', val_metrics)
+
+    # Save the model next to this script (works regardless of the working directory)
+    out_path = Path(__file__).resolve().parent / 'weights'
     os.makedirs(out_path, exist_ok=True)
-    model_name = f"{type(model).__name__}_{uuid.uuid4().hex[:8]}.pt"
-    torch.save(model.state_dict(), out_path / f"{model_name}")
-    print("Training has finished!")
+    model_name = f'{type(model).__name__}_{args.dataset}_{uuid.uuid4().hex[:8]}.pt'
+    torch.save(model.state_dict(), out_path / model_name)
+    print(f'\nSaved weights to {out_path / model_name}')
+    print('Training has finished!')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
