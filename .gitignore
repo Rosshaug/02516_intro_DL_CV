@@ -3,3 +3,5 @@ logs/
 results/
 
 __pycache__/
+
+data
