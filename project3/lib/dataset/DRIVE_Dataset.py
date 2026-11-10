@@ -47,5 +47,4 @@ def augment(image, label):
     image = TF.adjust_brightness(image, random.uniform(0.8, 1.2))
     image = TF.adjust_contrast(image, random.uniform(0.8, 1.2))
     image = TF.adjust_saturation(image, random.uniform(0.8, 1.2))
-    image = TF.adjust_gamma(image, random.uniform(0.8, 1.2))
     return image, label
