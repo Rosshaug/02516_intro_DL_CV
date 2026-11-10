@@ -44,3 +44,11 @@ class BCELoss_TotalVariation(nn.Module):
         regularization = (p[..., 1:, :] - p[..., :-1, :]).abs().mean() + (p[..., :, 1:] - p[..., :, :-1]).abs().mean()
         return loss + 0.1*regularization
 
+
+class WeightedBCELoss(nn.Module):
+    def __init__(self, pos_weight):
+        super().__init__()
+        self.register_buffer('pos_weight', torch.tensor([float(pos_weight)]))
+
+    def forward(self, y_pred, y_true):
+        return nn.functional.binary_cross_entropy_with_logits(y_pred, y_true, pos_weight=self.pos_weight)

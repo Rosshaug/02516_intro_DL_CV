@@ -8,25 +8,25 @@ class UNet(nn.Module):
 
         # encoder (downsampling)
         self.enc_conv0 = nn.Conv2d(3, 64, 3, padding=1)
-        self.pool0 = nn.MaxPool2d(2, 2)  # 128 -> 64
+        self.pool0 = nn.MaxPool2d(2, 2)  # H -> H/2
         self.enc_conv1 = nn.Conv2d(64, 64, 3, padding=1)
-        self.pool1 = nn.MaxPool2d(2, 2)  # 64 -> 32
+        self.pool1 = nn.MaxPool2d(2, 2)  # H/2 -> H/4
         self.enc_conv2 = nn.Conv2d(64, 64, 3, padding=1)
-        self.pool2 = nn.MaxPool2d(2, 2)  # 32 -> 16
+        self.pool2 = nn.MaxPool2d(2, 2)  # H/4 -> H/8
         self.enc_conv3 = nn.Conv2d(64, 64, 3, padding=1)
-        self.pool3 = nn.MaxPool2d(2, 2)  # 16 -> 8
+        self.pool3 = nn.MaxPool2d(2, 2)  # H/8 -> H/16
 
         # bottleneck
         self.bottleneck_conv = nn.Conv2d(64, 64, 3, padding=1)
 
         # decoder (upsampling)
-        self.upsample0 = nn.Upsample(16)  # 8 -> 16
+        self.upsample0 = nn.Upsample(scale_factor=2)  # H/16 -> H/8
         self.dec_conv0 = nn.Conv2d(64*2, 64, 3, padding=1)
-        self.upsample1 = nn.Upsample(32)  # 16 -> 32
+        self.upsample1 = nn.Upsample(scale_factor=2)  # H/8 -> H/4
         self.dec_conv1 = nn.Conv2d(64*2, 64, 3, padding=1)
-        self.upsample2 = nn.Upsample(64)  # 32 -> 64
+        self.upsample2 = nn.Upsample(scale_factor=2)  # H/4 -> H/2
         self.dec_conv2 = nn.Conv2d(64*2, 64, 3, padding=1)
-        self.upsample3 = nn.Upsample(128)  # 64 -> 128
+        self.upsample3 = nn.Upsample(scale_factor=2)  # H/2 -> H
         self.dec_conv3 = nn.Conv2d(64*2, 1, 3, padding=1)
 
     def forward(self, x):
