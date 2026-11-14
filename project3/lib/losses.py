@@ -45,6 +45,20 @@ class BCELoss_TotalVariation(nn.Module):
         return loss + 0.1*regularization
 
 
+class PointBCELoss(nn.Module):
+    """BCE on clicked pixels only; all other pixels are unknown and get no gradient.
+
+    y_true is (B, 2, H, W): channel 0 = click label, channel 1 = 1 where a click exists.
+    Positive and negative clicks are averaged separately so both classes weigh equally.
+    """
+
+    def forward(self, y_pred, y_true):
+        target, known = y_true[:, :1], y_true[:, 1:]
+        loss = nn.functional.binary_cross_entropy_with_logits(y_pred, target, reduction='none')
+        pos, neg = known * target, known * (1 - target)
+        return (loss * pos).sum() / pos.sum().clamp(min=1) + (loss * neg).sum() / neg.sum().clamp(min=1)
+
+
 class WeightedBCELoss(nn.Module):
     def __init__(self, pos_weight):
         super().__init__()

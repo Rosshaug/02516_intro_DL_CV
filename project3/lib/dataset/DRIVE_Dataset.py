@@ -33,6 +33,13 @@ class DRIVE(torch.utils.data.Dataset):
             image, label = augment(image, label)
         return TF.to_tensor(image), TF.to_tensor(label)
 
+    def native(self, idx):
+        """Full-resolution vessel label (H, W) and field-of-view mask (H, W, bool)."""
+        sid = os.path.basename(self.images[idx]).split('_')[0]
+        label = Image.open(os.path.join(DATA_PATH, f'training/1st_manual/{sid}_manual1.gif')).convert('L')
+        fov = Image.open(os.path.join(DATA_PATH, f'training/mask/{sid}_training_mask.gif')).convert('L')
+        return TF.to_tensor(label)[0], TF.to_tensor(fov)[0] > 0.5
+
 
 def augment(image, label):
     # geometric: same transform for image and label (retina is round -> any rotation is valid)

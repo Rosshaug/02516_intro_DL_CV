@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-METRICS = ['dice', 'iou', 'accuracy', 'sensitivity', 'specificity']
+METRICS = ['dice', 'iou', 'accuracy', 'sensitivity', 'specificity', 'precision']
 
 
 def confusion(logits, y_true):
@@ -28,6 +28,7 @@ def metrics(counts, eps=1e-8):
         'accuracy': (tp + tn) / (tp + fp + fn + tn + eps),
         'sensitivity': tp / (tp + fn + eps),
         'specificity': tn / (tn + fp + eps),
+        'precision': tp / (tp + fp + eps),
     }
     return {k: v.mean().item() for k, v in m.items()}
 
@@ -44,6 +45,26 @@ def evaluate(model, loader, device, loss_fn=None):
             loss += loss_fn(logits, y).item() / len(loader)
     model.train()
     return metrics(counts), loss
+
+
+@torch.no_grad()
+def evaluate_native(model, dataset, device):
+    """Metrics at the original image resolution: logits are upsampled (bilinear) to the native
+    label size and, if the dataset provides a field-of-view mask, only pixels inside it count."""
+    model.eval()
+    counts = 0
+    for i in range(len(dataset)):
+        x, _ = dataset[i]
+        label, fov = dataset.native(i)
+        logits = model(x[None].to(device)).cpu()
+        logits = F.interpolate(logits, size=label.shape, mode='bilinear', align_corners=False)[0, 0]
+        pred, true = logits > 0, label > 0.5
+        if fov is None:
+            fov = torch.ones_like(true)
+        counts = counts + torch.stack([(pred & true & fov).sum(), (pred & ~true & fov).sum(),
+                                       (~pred & true & fov).sum(), (~pred & ~true & fov).sum()]).double()[:, None]
+    model.train()
+    return metrics(counts)
 
 
 def print_table(title, results):
